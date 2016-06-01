@@ -3,14 +3,13 @@ def workspaceFolderName = "${WORKSPACE_NAME}"
 def projectFolderName = "${PROJECT_NAME}"
 
 // Variables
-def environmentTemplateGitUrl = "ssh://jenkins@gerrit:29418/${PROJECT_NAME}/adop-cartridge-java-environment-template"
+def environmentTemplateGitUrl = "ssh://jenkins@gerrit:29418/${PROJECT_NAME}/adop-cartridge-jboss-environment-template.git"
 
 // Jobs
 def environmentProvisioningPipelineView = buildPipelineView(projectFolderName + "/Environment_Provisioning")
 def createEnvironmentJob = freeStyleJob(projectFolderName + "/Create_Environment")
 def destroyEnvironmentJob = freeStyleJob(projectFolderName + "/Destroy_Environment")
 def listEnvironmentJob = freeStyleJob(projectFolderName + "/List_Environment")
-def extendJenkins = freeStyleJob(projectFolderName + "/Install_Plugins")
 
 // Create Environment
 createEnvironmentJob.with{
@@ -44,31 +43,31 @@ The reference application deploy job is expecting the default environment to be 
                 |}
                 |
                 |if [ "$ENVIRONMENT_TYPE" == "DEV" ]; then
-                | 	createDockerContainer "CI" tomcat.conf
+                | 	createDockerContainer "CI" jboss.conf
                 |elif [ "$ENVIRONMENT_TYPE" == "PROD" ]; then
                 |	##Creating 2 environment PRODA and PRODB, with a upstream ngix configuration in prod-tomcat.conf
-                |    mv tomcat.conf tomcatA.conf &&cp tomcatA.conf tomcatB.conf
-                |    createDockerContainer "PRODA" "tomcatA.conf"
-                |    createDockerContainer "PRODB" "tomcatB.conf"
+                |    mv jboss.conf jbossA.conf &&cp jbossA.conf jbossB.conf
+                |    createDockerContainer "PRODA" "jbossA.conf"
+                |    createDockerContainer "PRODB" "jbossB.conf"
                 |
                 |	SERVICE_NAME_PRODA="$(echo ${PROJECT_NAME} | tr '/' '_')_PRODA"
                 |    SERVICE_NAME_PRODB="$(echo ${PROJECT_NAME} | tr '/' '_')_PRODB"
-                |    TOMCAT_1_IP=$( docker inspect --format '{{ .NetworkSettings.Networks.'"$DOCKER_NETWORK_NAME"'.IPAddress }}' ${SERVICE_NAME_PRODA} )
-                |    TOMCAT_2_IP=$( docker inspect --format '{{ .NetworkSettings.Networks.'"$DOCKER_NETWORK_NAME"'.IPAddress }}' ${SERVICE_NAME_PRODB} )
+                |    JBOSS_1_IP=$( docker inspect --format '{{ .NetworkSettings.Networks.'"$DOCKER_NETWORK_NAME"'.IPAddress }}' ${SERVICE_NAME_PRODA} )
+                |    JBOSS_2_IP=$( docker inspect --format '{{ .NetworkSettings.Networks.'"$DOCKER_NETWORK_NAME"'.IPAddress }}' ${SERVICE_NAME_PRODB} )
                 |    PROJECT_KEY_PROD="$(echo ${PROJECT_NAME} | tr '/' '_')_PROD"
                 |    TOKEN_UPSTREAM_NAME="###TOKEN_UPSTREAM_NAME###"
                 |    TOKEN_NAMESPACE="###TOKEN_NAMESPACE###"
-                |    TOKEN_TOMCAT_1_IP="###TOKEN_TOMCAT_1_IP###"
-                |    TOKEN_TOMCAT_1_PORT="###TOKEN_TOMCAT_1_PORT###"
-                |    TOKEN_TOMCAT_2_IP="###TOKEN_TOMCAT_2_IP###"
-                |    TOKEN_TOMCAT_2_PORT="###TOKEN_TOMCAT_2_PORT###"
+                |    TOKEN_JBOSS_1_IP="###TOKEN_JBOSS_1_IP###"
+                |    TOKEN_JBOSS_1_PORT="###TOKEN_JBOSS_1_PORT###"
+                |    TOKEN_JBOSS_2_IP="###TOKEN_JBOSS_2_IP###"
+                |    TOKEN_JBOSS_2_PORT="###TOKEN_JBOSS_2_PORT###"
                 |
                 |    sed -i "s/${TOKEN_UPSTREAM_NAME}/${PROJECT_KEY_PROD}/g" prod-tomcat.conf
                 |    sed -i "s/${TOKEN_NAMESPACE}/${PROJECT_KEY_PROD}/g" prod-tomcat.conf
-                |    sed -i "s/${TOKEN_TOMCAT_1_IP}/${TOMCAT_1_IP}/g" prod-tomcat.conf
-                |    sed -i "s/${TOKEN_TOMCAT_1_PORT}/8080/g" prod-tomcat.conf
-                |    sed -i "s/${TOKEN_TOMCAT_2_IP}/${TOMCAT_2_IP}/g" prod-tomcat.conf
-                |    sed -i "s/${TOKEN_TOMCAT_2_PORT}/8080/g" prod-tomcat.conf
+                |    sed -i "s/${TOKEN_JBOSS_1_IP}/${JBOSS_1_IP}/g" prod-tomcat.conf
+                |    sed -i "s/${TOKEN_JBOSS_1_PORT}/8080/g" prod-tomcat.conf
+                |    sed -i "s/${TOKEN_JBOSS_2_IP}/${JBOSS_2_IP}/g" prod-tomcat.conf
+                |    sed -i "s/${TOKEN_JBOSS_2_PORT}/8080/g" prod-tomcat.conf
                 |    docker cp prod-tomcat.conf proxy:/etc/nginx/sites-enabled/${PROJECT_KEY_PROD}.conf
                 |fi
                 |## Reload nginx
@@ -134,11 +133,11 @@ destroyEnvironmentJob.with{
                 |}
                 |
                 |if [ "$ENVIRONMENT_TYPE" == "DEV" ]; then
-                |	deleteDockerContainer "CI" tomcat.conf
+                |	deleteDockerContainer "CI" jboss.conf
                 |elif [ "$ENVIRONMENT_TYPE" == "PROD" ]; then
-                |	mv tomcat.conf tomcatA.conf &&cp tomcatA.conf tomcatB.conf
-                |    deleteDockerContainer "PRODA" "tomcatA.conf"
-                |    deleteDockerContainer "PRODB" "tomcatB.conf"
+                |	mv jboss.conf jbossA.conf &&cp jbossA.conf jbossB.conf
+                |    deleteDockerContainer "PRODA" "jbossA.conf"
+                |    deleteDockerContainer "PRODB" "jbossB.conf"
                 |    PROJECT_KEY_PROD="$(echo ${PROJECT_NAME} | tr '/' '_')_PROD"
                 |    docker exec proxy rm -f /etc/nginx/sites-enabled/${PROJECT_KEY_PROD}.conf
                 |fi
@@ -184,47 +183,4 @@ listEnvironmentJob.with{
                 |echo "=.=.=.=.=.=.=.=.=.=.=.=."
                 |set -x'''.stripMargin())
     }
-}
-
-// Load Plugins
-extendJenkins.with{
-    description("This job installs required plugins for this cartridge.")
-    label("docker")
-    environmentVariables {
-        env('WORKSPACE_NAME',workspaceFolderName)
-        env('PROJECT_NAME',projectFolderName)
-    }
-    wrappers {
-        preBuildCleanup()
-        injectPasswords()
-        maskPasswords()
-        sshAgent("adop-jenkins-master")
-    }
-    systemGroovyCommand('''
-			|import jenkins.model.*
-			|def pluginParameter="join"
-			|def plugins = pluginParameter.split()
-			|println(plugins)
-			|def instance = Jenkins.getInstance()
-			|def pm = instance.getPluginManager()
-			|def uc = instance.getUpdateCenter()
-			|def installed = false
-			|
-			|plugins.each {
-			| if (!pm.getPlugin(it)) {
-			|	def plugin = uc.getPlugin(it)
-			|	if (plugin) {
-			|	  println("Installing " + it)
-			|	  plugin.deploy()
-			|	  installed = true
-			|	}
-			|  }
-			|}
-			|
-			|instance.save()
-			|if (installed) {
-			|  instance.doSafeRestart()
-			|}
-			|'''.stripMargin())
-
 }
